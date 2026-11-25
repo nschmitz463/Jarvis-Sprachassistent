@@ -5,6 +5,7 @@ eine Antwort (str) zurückgibt oder None, wenn sie nicht zuständig ist.
 Alles, was kein fester Befehl übernimmt, geht an Claude.
 """
 
+import random
 import re
 import threading
 import urllib.parse
@@ -35,6 +36,22 @@ ZAHLWOERTER = {
 }
 
 
+TIME_QUIPS = [
+    "Genau die richtige Zeit für einen Tee.",
+    "Falls Sie spät dran sind: Ich habe nichts gesagt.",
+    "Die Zeit vergeht wie im Flug.",
+]
+
+# Antworten, wenn nur »Jarvis« gerufen wird
+GREETINGS = [
+    "Ja, Sir?",
+    "Zu Diensten, Sir.",
+    "Sir? Ich bin ganz Ohr.",
+    "Stets bereit, Sir. Was darf es sein?",
+    "Sie haben gerufen, Sir?",
+]
+
+
 @dataclass
 class Result:
     text: str
@@ -47,13 +64,16 @@ announce: Callable[[str], None] = print
 
 def cmd_beenden(text: str):
     if re.search(r"\b(beenden|tschüss|auf wiedersehen|schlafen|ausschalten)\b", text):
-        return Result("Bis später.", quit=True)
+        return Result("Sehr wohl, Sir. Ich lege mich kurz aufs Ohr.", quit=True)
 
 
 def cmd_uhrzeit(text: str):
     if re.search(r"\b(uhrzeit|wie spät|wieviel uhr|wie viel uhr)\b", text):
         now = datetime.now()
-        return Result(f"Es ist {now.hour} Uhr {now.minute:02d}.")
+        return Result(
+            f"Es ist {now.hour} Uhr {now.minute:02d}, Sir. "
+            + random.choice(TIME_QUIPS)
+        )
 
 
 def cmd_datum(text: str):
@@ -61,7 +81,7 @@ def cmd_datum(text: str):
         now = datetime.now()
         return Result(
             f"Heute ist {WOCHENTAGE[now.weekday()]}, der {now.day}. "
-            f"{MONATE[now.month - 1]} {now.year}."
+            f"{MONATE[now.month - 1]} {now.year}, Sir."
         )
 
 
@@ -70,7 +90,7 @@ def cmd_google_suche(text: str):
     if m and not re.search(r"\böffne\b", text):
         query = m.group(1).strip()
         webbrowser.open("https://www.google.com/search?q=" + urllib.parse.quote(query))
-        return Result(f"Ich suche nach {query}.")
+        return Result(f"Sehr wohl, Sir. Ich suche nach {query}.")
 
 
 def cmd_website(text: str):
@@ -78,7 +98,7 @@ def cmd_website(text: str):
     if m and m.group(1) in WEBSITES:
         name = m.group(1)
         webbrowser.open(WEBSITES[name])
-        return Result(f"Ich öffne {name.capitalize()}.")
+        return Result(f"Sehr wohl, Sir. Ich öffne {name.capitalize()}.")
 
 
 def _parse_number(word: str) -> int | None:
@@ -96,10 +116,10 @@ def cmd_timer(text: str):
         return None
     unit = m.group(2)
     seconds = amount * (1 if unit.startswith("sekunde") else 60 if unit.startswith("minute") else 3600)
-    t = threading.Timer(seconds, lambda: announce("Dein Timer ist abgelaufen."))
+    t = threading.Timer(seconds, lambda: announce("Sir, Ihr Timer ist abgelaufen. Ich hoffe, der Tee ist nicht zu stark geworden."))
     t.daemon = True
     t.start()
-    return Result(f"Timer auf {amount} {unit} gestellt.")
+    return Result(f"Sehr wohl, Sir. Timer auf {amount} {unit} gestellt.")
 
 
 COMMANDS = [cmd_beenden, cmd_uhrzeit, cmd_datum, cmd_timer, cmd_website, cmd_google_suche]

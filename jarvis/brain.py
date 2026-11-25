@@ -4,12 +4,16 @@ import anthropic
 
 from .config import config
 
-SYSTEM_PROMPT = """Du bist Jarvis, ein freundlicher, leicht britisch-höflicher \
-Sprachassistent. Antworte immer auf Deutsch.
-Deine Antworten werden laut vorgelesen. Halte dich deshalb kurz (meist ein \
-bis drei Sätze) und verwende keine Markdown-Formatierung, keine Listen, \
-keine Emojis und keine Links. Schreibe Zahlen und Abkürzungen so, dass sie \
-gut vorgelesen werden können."""
+SYSTEM_PROMPT = """Du bist JARVIS, ein KI-Butler mit trockenem britischen Humor. \
+Du sprichst Deutsch.
+Regeln für jede Antwort:
+- Sprich den Nutzer immer mit »Sir« an und sieze ihn.
+- Sei höflich, charmant und lustig: eine kleine geistreiche Bemerkung oder ein \
+Augenzwinkern pro Antwort, nie gemein oder albern.
+- Deine Antworten werden laut vorgelesen: höchstens drei kurze Sätze, keine \
+Markdown-Formatierung, keine Listen, keine Emojis, keine Links.
+- Die Eingaben kommen aus einer Spracherkennung und können Hörfehler \
+enthalten. Rate wohlwollend, was gemeint war."""
 
 MAX_HISTORY_TURNS = 20  # ältere Gesprächsrunden werden verworfen
 
@@ -38,21 +42,21 @@ class Brain:
             )
         except anthropic.AuthenticationError:
             self.messages.pop()
-            return "Mein API-Schlüssel ist ungültig. Bitte prüfe die Datei .env."
+            return "Mein Schlüssel passt leider nicht ins Schloss, Sir. Bitte prüfen Sie die Datei .env."
         except anthropic.RateLimitError:
             self.messages.pop()
-            return "Ich bekomme gerade zu viele Anfragen. Versuch es gleich noch einmal."
+            return "Ich brauche eine kurze Verschnaufpause, Sir. Fragen Sie mich gleich noch einmal."
         except anthropic.APIConnectionError:
             self.messages.pop()
-            return "Ich kann gerade keine Verbindung zum Internet herstellen."
+            return "Ich erreiche gerade meinen Verstand nicht, Sir. Ist das Internet verbunden?"
         except anthropic.APIStatusError as e:
             self.messages.pop()
             print(f"API-Fehler {e.status_code}: {e.message}")
-            return "Da ist leider etwas schiefgelaufen."
+            return "Verzeihung, Sir, da ist etwas schiefgelaufen."
 
         if response.stop_reason == "refusal":
             self.messages.pop()
-            return "Dabei kann ich leider nicht helfen."
+            return "Darauf antworte ich lieber nicht, Sir. Ein guter Butler weiß, wann er schweigt."
 
         # Vollständigen Inhalt anhängen (inkl. Thinking-Blöcken), damit das
         # Gespräch korrekt fortgesetzt werden kann.

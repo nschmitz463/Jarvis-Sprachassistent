@@ -1,0 +1,809 @@
+<title>Jarvis</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+  /* Layout: one-screen voice console - wordmark + status, the listening orb, the conversation, controls pinned at the bottom. */
+  :root {
+    --bg: #0b0f17;
+    --panel: #141b28;
+    --panel-2: #1c2536;
+    --line: #2a3448;
+    --text: #ece6da;
+    --muted: #98a0b3;
+    --brass: #e2aa4c;
+    --brass-deep: #9c7128;
+    --teal: #5ec6d4;
+    --alert: #e58a78;
+    --font-display: "Unbounded", "Space Grotesk", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .app {
+    height: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: 14px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 14px;
+  }
+
+  /* Header */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .wordmark {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    letter-spacing: 0.22em;
+    color: var(--brass);
+  }
+  .wordmark small {
+    display: block;
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .status::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--line);
+  }
+  [data-state="waiting"] .status::before { background: var(--teal); }
+  [data-state="attentive"] .status::before,
+  [data-state="speaking"] .status::before { background: var(--brass); }
+  [data-state="thinking"] .status::before { background: var(--brass); animation: blink 0.9s infinite; }
+
+  /* Orb */
+  .stage { display: grid; justify-items: center; gap: 8px; text-align: center; }
+  .orb {
+    position: relative;
+    width: clamp(112px, 32vw, 176px);
+    aspect-ratio: 1;
+    max-width: 100%;
+    border-radius: 50%;
+    display: grid; place-items: center;
+  }
+  .orb .ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 2px dashed var(--line);
+  }
+  .orb .arc {
+    position: absolute; inset: 8%; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0 70%, var(--brass) 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    opacity: 0;
+  }
+  .orb .core {
+    width: 56%; aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, var(--panel-2), var(--panel) 70%);
+    border: 1px solid var(--line);
+    display: grid; place-items: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 1.6rem;
+    color: var(--muted);
+    transition: box-shadow 0.4s, color 0.4s, border-color 0.4s;
+  }
+  [data-state="waiting"] .orb .ring { border-color: color-mix(in srgb, var(--teal) 55%, transparent); animation: spin 24s linear infinite; }
+  [data-state="waiting"] .orb .core { color: var(--teal); box-shadow: 0 0 28px color-mix(in srgb, var(--teal) 25%, transparent); }
+  [data-state="attentive"] .orb .ring { border-color: var(--brass); animation: spin 6s linear infinite; }
+  [data-state="attentive"] .orb .core,
+  [data-state="speaking"] .orb .core,
+  [data-state="thinking"] .orb .core {
+    color: var(--brass); border-color: var(--brass-deep);
+    box-shadow: 0 0 36px color-mix(in srgb, var(--brass) 35%, transparent);
+  }
+  [data-state="thinking"] .orb .arc { opacity: 1; animation: spin 1.1s linear infinite; }
+  [data-state="speaking"] .orb .core { animation: pulse 0.7s ease-in-out infinite alternate; }
+  .heard { min-height: 1.5em; margin: 0; color: var(--muted); font-style: italic; font-size: 0.95rem; max-width: 34ch; overflow-wrap: anywhere; }
+  .hint { margin: 0; font-size: 0.85rem; color: var(--muted); max-width: 44ch; text-wrap: balance; }
+  .hint.warn { color: var(--alert); }
+
+  /* Conversation */
+  .log {
+    min-height: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 4px 2px;
+    scrollbar-width: thin;
+  }
+  .msg { margin: 0; max-width: 88%; overflow-wrap: anywhere; }
+  .msg .who {
+    display: block; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--brass); margin-bottom: 2px;
+  }
+  .msg p { margin: 0; }
+  .msg--user { align-self: flex-end; background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; padding: 8px 12px; }
+  .msg--user .who { color: var(--muted); }
+  .msg--jarvis { align-self: flex-start; }
+  .msg--pending p { color: var(--muted); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; }
+  .examples span { width: 100%; font-size: 0.78rem; color: var(--muted); }
+  .chip {
+    font: inherit; font-size: 0.85rem; color: var(--text);
+    background: transparent; border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 12px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--brass-deep); }
+
+  /* Controls */
+  .controls { display: grid; gap: 10px; }
+  .mic {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; min-height: 54px;
+    font: inherit; font-weight: 600; font-size: 1rem;
+    color: #1a1305; background: var(--brass);
+    border: 0; border-radius: 999px; cursor: pointer;
+  }
+  .mic svg { width: 20px; height: 20px; }
+  .mic[aria-pressed="true"] { background: transparent; color: var(--brass); border: 2px solid var(--brass); }
+  .mic:disabled { opacity: 0.55; cursor: default; }
+  .ask { display: flex; gap: 8px; }
+  .ask input {
+    flex: 1; min-width: 0;
+    font: inherit; font-size: 16px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .ask input::placeholder { color: var(--muted); }
+  .send {
+    font: inherit; font-weight: 600; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 0 16px; cursor: pointer;
+  }
+  .keybox { font-size: 0.85rem; color: var(--muted); }
+  .keybox summary { cursor: pointer; }
+  .keybox form { display: flex; gap: 8px; margin-top: 8px; }
+  .keybox p { margin: 6px 0 0; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { from { transform: scale(0.96); } to { transform: scale(1.05); } }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  @media (prefers-reduced-motion: reduce) {
+    .orb .ring, .orb .arc, .orb .core, .status::before { animation: none !important; }
+  }
+  @media (max-height: 640px) {
+    .orb { width: 92px; }
+    .orb .core { font-size: 1.1rem; }
+  }
+</style>
+
+<div class="app" id="app" data-state="off">
+  <header class="top">
+    <h1 class="wordmark">JARVIS<small>Butler für alle Fragen</small></h1>
+    <span class="status" id="status" role="status">Ruht</span>
+  </header>
+
+  <section class="stage" aria-label="Jarvis">
+    <div class="orb" aria-hidden="true"><div class="ring"></div><div class="arc"></div><div class="core">J</div></div>
+    <p class="heard" id="heard" aria-live="polite"></p>
+    <p class="hint" id="hint">Einen Moment, ich mache mich bereit …</p>
+  </section>
+
+  <main class="log" id="log" aria-live="polite">
+    <div class="msg msg--jarvis"><span class="who">Jarvis</span><p>Guten Tag, Sir. Tippen Sie auf »Zuhören« und sagen Sie »Jarvis«, wann immer Sie etwas brauchen. Ich bin höflich, schlagfertig und – wie ich bescheiden anmerken darf – nie im Urlaub.</p></div>
+    <div class="examples" id="examples">
+      <span>Zum Beispiel:</span>
+      <button class="chip" type="button" data-say="Wie spät ist es?">Wie spät ist es?</button>
+      <button class="chip" type="button" data-say="Erzähl mir einen Witz">Erzähl mir einen Witz</button>
+      <button class="chip" type="button" data-say="Stell einen Timer auf 5 Minuten">Timer auf 5 Minuten</button>
+      <button class="chip" type="button" data-say="Was soll ich heute kochen?">Was soll ich kochen?</button>
+    </div>
+  </main>
+
+  <footer class="controls">
+    <button class="mic" id="mic" type="button" aria-pressed="false" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg>
+      <span id="micLabel">Zuhören starten</span>
+    </button>
+    <form class="ask" id="askForm" autocomplete="off">
+      <input id="askInput" type="text" placeholder="Oder hier schreiben bzw. diktieren …" aria-label="Nachricht an Jarvis" enterkeyhint="send">
+      <button class="send" type="submit">Senden</button>
+    </form>
+    <details class="keybox" id="keybox" hidden>
+      <summary>Anthropic-API-Schlüssel</summary>
+      <form id="keyForm" autocomplete="off">
+        <input id="keyInput" type="password" placeholder="sk-ant-…" aria-label="API-Schlüssel" style="flex:1;min-width:0;font:inherit;font-size:16px;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px">
+        <button class="send" type="submit">Speichern</button>
+      </form>
+      <p>Der Schlüssel bleibt nur auf diesem Gerät gespeichert und geht direkt an die Anthropic-API.</p>
+    </details>
+  </footer>
+</div>
+
+<script type="module">
+  // ---------- Einstellungen ----------
+  const API_MODEL = "claude-opus-5-5";
+  const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.7.0/+esm";
+  const WAKE = /\b(jarvis|jarwis|javis|jervis|charvis|dscharvis|dschawis|tscharvis|tschawis)\b[\s,.!?:;-]*/i;
+  const MAX_TURNS = 16;
+  const FOLLOW_UP_MS = 8000;
+
+  const GREETINGS = [
+    "Ja, Sir?",
+    "Zu Diensten, Sir.",
+    "Sir? Ich bin ganz Ohr.",
+    "Stets bereit, Sir. Was darf es sein?",
+    "Sie haben gerufen, Sir?",
+    "Hier, Sir. Frisch poliert und einsatzbereit.",
+  ];
+
+  const LABELS = {
+    off: "Ruht",
+    waiting: "Hört auf »Jarvis«",
+    attentive: "Ganz Ohr, Sir",
+    thinking: "Denkt nach …",
+    speaking: "Spricht",
+  };
+
+  function persona() {
+    const now = new Date();
+    const when = now.toLocaleString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return [
+      "Du bist JARVIS, ein KI-Butler mit trockenem britischen Humor. Du sprichst Deutsch.",
+      "Regeln für jede Antwort:",
+      "- Sprich den Nutzer immer mit »Sir« an und sieze ihn.",
+      "- Sei höflich, charmant und lustig: eine kleine geistreiche Bemerkung oder ein Augenzwinkern pro Antwort, nie gemein oder albern.",
+      "- Deine Antworten werden laut vorgelesen: höchstens drei kurze Sätze, keine Markdown-Formatierung, keine Listen, keine Emojis, keine Links.",
+      "- Die Eingaben kommen aus einer Spracherkennung und können Hörfehler enthalten. Rate wohlwollend, was gemeint war.",
+      "- Du kannst keine Geräte steuern, keine Nachrichten senden und nicht im Internet suchen. Sag das ehrlich und mit Humor, statt etwas zu erfinden.",
+      `- Jetzt ist ${when}.`,
+    ].join("\n");
+  }
+
+  // ---------- Elemente & Zustand ----------
+  const $ = (s) => document.querySelector(s);
+  const app = $("#app"), statusEl = $("#status"), heardEl = $("#heard"), hintEl = $("#hint");
+  const logEl = $("#log"), micBtn = $("#mic"), micLabel = $("#micLabel");
+  const askForm = $("#askForm"), askInput = $("#askInput");
+  const keybox = $("#keybox"), keyForm = $("#keyForm"), keyInput = $("#keyInput");
+
+  let state = "off";
+  let listening = false;
+  let buffer = "";
+  let flushTimer = null, followTimer = null;
+  let speaking = false, lastSpokeAt = 0, lastSpoken = "";
+  let busy = false;
+  let engine = null;   // Claude-Anbindung
+  let ear = null;      // Spracheingabe
+  let wakeLock = null;
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  function setState(s) {
+    state = s;
+    app.dataset.state = s;
+    statusEl.textContent = LABELS[s];
+  }
+  function idleState() { setState(listening ? "waiting" : "off"); }
+
+  function hint(text, warn = false) {
+    hintEl.textContent = text;
+    hintEl.classList.toggle("warn", warn);
+  }
+
+  function addMsg(who, text, pending = false) {
+    const wrap = document.createElement("div");
+    wrap.className = `msg msg--${who}` + (pending ? " msg--pending" : "");
+    const label = document.createElement("span");
+    label.className = "who";
+    label.textContent = who === "user" ? "Sie" : "Jarvis";
+    const p = document.createElement("p");
+    p.textContent = text;
+    wrap.append(label, p);
+    logEl.append(wrap);
+    logEl.scrollTop = logEl.scrollHeight;
+    return { wrap, p };
+  }
+
+  // ---------- Sprachausgabe (Stimme des Geräts) ----------
+  const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+  let unlocked = false;
+  function unlockSpeech() {
+    if (!synth || unlocked) return;
+    try {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      synth.speak(u);
+      unlocked = true;
+    } catch {}
+  }
+  function pickVoice() {
+    const de = synth.getVoices().filter((v) => /^de/i.test(v.lang));
+    return (
+      de.find((v) => /markus|yannick|stefan|hans|conrad|viktor|male|männlich/i.test(v.name) && !/female|weiblich/i.test(v.name)) ||
+      de.find((v) => /google/i.test(v.name)) ||
+      de[0] || null
+    );
+  }
+  function speak(text) {
+    lastSpoken = norm(text);
+    if (!synth) return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        speaking = false;
+        lastSpokeAt = Date.now();
+        resolve();
+      };
+      try {
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "de-DE";
+        const v = pickVoice();
+        if (v) u.voice = v;
+        u.rate = 1.03;
+        u.pitch = 0.92;
+        u.onend = finish;
+        u.onerror = finish;
+        speaking = true;
+        synth.speak(u);
+        // Sicherheitsnetz, falls der Browser "onend" verschluckt
+        setTimeout(finish, Math.max(4000, text.length * 95));
+      } catch {
+        finish();
+      }
+    });
+  }
+
+  // ---------- Was gehört wurde ----------
+  function norm(t) {
+    return t.toLowerCase().replace(/[^a-zäöüß0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function isEcho(text) {
+    // Jarvis hört sich über den Lautsprecher selbst: das verwerfen.
+    if (speaking || Date.now() - lastSpokeAt < 1200) return true;
+    const n = norm(text);
+    if (!n || !lastSpoken || Date.now() - lastSpokeAt > 6000) return false;
+    if (lastSpoken.includes(n)) return true;
+    const words = n.split(" ");
+    const hits = words.filter((w) => lastSpoken.includes(w)).length;
+    return words.length >= 3 && hits / words.length > 0.7;
+  }
+
+  function onPartial(text) {
+    if (speaking) return;
+    heardEl.textContent = text;
+    if (text && buffer) scheduleFlush();
+  }
+  function onHeard(text) {
+    if (!text || !text.trim() || busy || isEcho(text)) return;
+    buffer += (buffer ? " " : "") + text.trim();
+    heardEl.textContent = buffer;
+    scheduleFlush();
+  }
+  function scheduleFlush() {
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 1200);
+  }
+  function flush() {
+    const phrase = buffer.trim();
+    buffer = "";
+    heardEl.textContent = "";
+    if (!phrase || busy) return;
+    const m = phrase.match(WAKE);
+    const afterWake = m ? phrase.slice(m.index + m[0].length).trim() : null;
+    if (state === "attentive") {
+      clearTimeout(followTimer);
+      const cmd = afterWake ?? phrase;
+      if (!cmd) return greet();
+      return handle(cmd);
+    }
+    if (afterWake === null) return; // ohne »Jarvis« wird nicht reagiert
+    if (!afterWake) return greet();
+    handle(afterWake);
+  }
+
+  function listenForFollowUp() {
+    if (!listening) return idleState();
+    setState("attentive");
+    clearTimeout(followTimer);
+    followTimer = setTimeout(() => { if (state === "attentive") idleState(); }, FOLLOW_UP_MS);
+  }
+
+  async function greet() {
+    const g = pick(GREETINGS);
+    addMsg("jarvis", g);
+    setState("speaking");
+    await speak(g);
+    listenForFollowUp();
+  }
+
+  async function reply(text) {
+    addMsg("jarvis", text);
+    setState("speaking");
+    await speak(text);
+    listenForFollowUp();
+  }
+
+  // ---------- Feste Befehle ----------
+  const WOCHENTAGE = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+  const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+  const ZAHLEN = { ein: 1, eine: 1, einen: 1, zwei: 2, drei: 3, vier: 4, "fünf": 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10, zwanzig: 20, "dreißig": 30 };
+
+  function localCommand(raw) {
+    const t = raw.toLowerCase();
+    const now = new Date();
+
+    if (/\b(schlafen|ruhemodus|gute nacht|hör auf zuzuhören|nicht mehr zuhören)\b/.test(t)) {
+      return { text: "Sehr wohl, Sir. Ich lege mich kurz aufs Ohr. Wecken Sie mich einfach wieder.", after: () => ear?.stop() };
+    }
+    if (/\b(neues gespräch|neues thema|vergiss (das|alles))\b/.test(t)) {
+      engine?.reset();
+      return { text: "Erledigt, Sir. Ich habe alles vergessen, was wir besprochen haben. Diskretion ist mein zweiter Vorname." };
+    }
+    if (/\b(uhrzeit|wie spät|wie ?viel uhr)\b/.test(t)) {
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      return { text: `Es ist ${now.getHours()} Uhr ${mm}, Sir. ` + pick(["Genau die richtige Zeit für einen Tee.", "Falls Sie spät dran sind: Ich habe nichts gesagt.", "Die Zeit vergeht wie im Flug."]) };
+    }
+    if (/\b(datum|welcher tag|welches datum|den wievielten)\b/.test(t)) {
+      return { text: `Heute ist ${WOCHENTAGE[now.getDay()]}, der ${now.getDate()}. ${MONATE[now.getMonth()]} ${now.getFullYear()}, Sir.` };
+    }
+    const tm = t.match(/timer.*?(\d+|[a-zäöüß]+)\s+(sekunden?|minuten?|stunden?)\b/);
+    if (tm) {
+      const n = /^\d+$/.test(tm[1]) ? Number(tm[1]) : ZAHLEN[tm[1]];
+      if (n) {
+        const unit = tm[2];
+        const ms = n * (unit.startsWith("sekunde") ? 1000 : unit.startsWith("minute") ? 60000 : 3600000);
+        const word = n === 1 ? unit.replace(/n$/, "") : unit.replace(/e$/, "en");
+        const label = `${n} ${word[0].toUpperCase()}${word.slice(1)}`;
+        setTimeout(() => reply(`Sir, Ihr Timer über ${label} ist abgelaufen. Ich hoffe, der Tee ist nicht zu stark geworden.`), ms);
+        return { text: `Sehr wohl, Sir. Timer auf ${label} gestellt. Ich behalte die Uhr im Auge.` };
+      }
+    }
+    return null;
+  }
+
+  // ---------- Eine Bitte bearbeiten ----------
+  async function handle(cmd) {
+    const text = cmd.trim();
+    if (!text) return;
+    addMsg("user", text);
+    const local = localCommand(text);
+    if (local) {
+      await reply(local.text);
+      local.after?.();
+      return;
+    }
+    if (!engine) {
+      return reply(engineMissingText());
+    }
+    busy = true;
+    setState("thinking");
+    const bubble = addMsg("jarvis", "Einen Augenblick, Sir …", true);
+    let answer;
+    try {
+      answer = await engine.ask(text, (partial) => {
+        bubble.wrap.classList.remove("msg--pending");
+        bubble.p.textContent = partial;
+        logEl.scrollTop = logEl.scrollHeight;
+      });
+    } catch (e) {
+      answer = engine.errorText(e);
+    }
+    bubble.wrap.classList.remove("msg--pending");
+    bubble.p.textContent = answer;
+    logEl.scrollTop = logEl.scrollHeight;
+    busy = false;
+    setState("speaking");
+    await speak(answer);
+    listenForFollowUp();
+  }
+
+  function engineMissingText() {
+    return keybox.hidden
+      ? "Verzeihung, Sir, mir fehlt gerade die Verbindung zu meinem Verstand. Für Uhrzeit, Datum und Timer reicht es aber noch."
+      : "Verzeihung, Sir, ich brauche zuerst einen API-Schlüssel. Sie finden das Feld ganz unten.";
+  }
+
+  // ---------- Claude über claude.ai (Artifact) ----------
+  function makeSampleEngine(sample) {
+    let turns = [];
+    return {
+      reset() { turns = []; },
+      async ask(text, onText) {
+        turns.push({ role: "user", content: text });
+        while (turns.length > MAX_TURNS) turns.splice(0, 2);
+        try {
+          const { text: answer } = await sample([{ role: "user", content: persona() }, ...turns], {
+            modelTier: "quick",
+            cache: false,
+            onText: ({ text: t }) => onText(t),
+          });
+          turns.push({ role: "assistant", content: answer });
+          return answer;
+        } catch (e) {
+          turns.pop();
+          throw e;
+        }
+      },
+      errorText(e) {
+        switch (e?.code) {
+          case "not_granted":
+          case "sampling_disabled":
+            return "Ohne Ihre Erlaubnis darf ich leider nicht nachdenken, Sir. Uhrzeit, Datum und Timer erledige ich trotzdem gern.";
+          case "rate_limited":
+            return "Ich brauche eine kurze Verschnaufpause, Sir. Fragen Sie mich gleich noch einmal.";
+          case "refused":
+            return "Darauf antworte ich lieber nicht, Sir. Ein guter Butler weiß, wann er schweigt.";
+          case "session_expired":
+            return "Sir, Sie müssten sich bei Claude neu anmelden. Ich warte solange hier.";
+          default:
+            return "Verzeihung, Sir, da ist etwas schiefgelaufen. Versuchen wir es gleich noch einmal.";
+        }
+      },
+    };
+  }
+
+  // ---------- Claude über die Anthropic-API (eigenständige Seite) ----------
+  async function makeApiEngine(apiKey) {
+    const { default: Anthropic } = await import(SDK_URL);
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    let history = [];
+    return {
+      reset() { history = []; },
+      async ask(text) {
+        history.push({ role: "user", content: text });
+        try {
+          const r = await client.beta.messages.create({
+            model: API_MODEL,
+            max_tokens: 16000,
+            system: persona(),
+            messages: history,
+            output_config: { effort: "low" },
+            // Lehnt das Modell ab, springt automatisch ein passendes Ersatzmodell ein.
+            betas: ["server-side-fallback-2026-07-01"],
+            fallbacks: "default",
+          });
+          if (r.stop_reason === "refusal") {
+            history.pop();
+            return "Darauf antworte ich lieber nicht, Sir. Ein guter Butler weiß, wann er schweigt.";
+          }
+          // Vollständigen Inhalt anhängen, damit das Gespräch korrekt weiterläuft.
+          history.push({ role: "assistant", content: r.content });
+          while (history.length > MAX_TURNS) history.splice(0, 2);
+          return r.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim() || "Mir fehlen die Worte, Sir.";
+        } catch (e) {
+          history.pop();
+          throw e;
+        }
+      },
+      errorText(e) {
+        if (e instanceof Anthropic.AuthenticationError) return "Mein Schlüssel passt leider nicht ins Schloss, Sir. Bitte prüfen Sie den API-Schlüssel.";
+        if (e instanceof Anthropic.RateLimitError) return "Ich brauche eine kurze Verschnaufpause, Sir. Fragen Sie mich gleich noch einmal.";
+        if (e instanceof Anthropic.APIConnectionError) return "Ich erreiche gerade meinen Verstand nicht, Sir. Ist das Internet verbunden?";
+        console.error(e);
+        return "Verzeihung, Sir, da ist etwas schiefgelaufen. Versuchen wir es gleich noch einmal.";
+      },
+    };
+  }
+
+  // ---------- Spracheingabe über claude.ai (Artifact) ----------
+  function makeDictationEar(d) {
+    let withLanguage = true;
+    d.onPartial(({ text }) => onPartial(text));
+    d.onFinal(({ text }) => onHeard(text));
+    d.onState(({ state: s, reason }) => {
+      if (s === "listening") {
+        setListening(true);
+        hint("Ich höre zu. Sagen Sie »Jarvis« und dann Ihre Frage.");
+      } else if (s === "idle") {
+        setListening(false);
+        const msg = {
+          hidden: "Pausiert, weil die Seite im Hintergrund war. Tippen Sie auf »Zuhören starten«.",
+          viewer_stopped: "Zuhören beendet.",
+          time_limit: "Nach einer Stunde mache ich eine Pause. Tippen Sie zum Weitermachen.",
+          not_granted: "Das Mikrofon ist nicht freigegeben. Sie können mir aber schreiben.",
+          rate_limited: "Das Mikrofon ist gerade belegt. Versuchen Sie es gleich noch einmal.",
+          upstream_error: "Das Mikrofon hat gestreikt. Tippen Sie auf »Zuhören starten«.",
+        }[reason];
+        if (msg) hint(msg, reason === "not_granted" || reason === "upstream_error");
+      }
+    });
+    return {
+      start() {
+        const p = d.start(withLanguage ? { language: "de" } : undefined);
+        return p.catch((e) => {
+          if (e?.code === "unavailable" && withLanguage) {
+            withLanguage = false;
+            hint("Bitte noch einmal tippen.");
+            return;
+          }
+          if (e?.code === "not_granted") hint("Ohne Mikrofon-Erlaubnis kann ich Sie nicht hören, Sir. Schreiben geht aber immer.", true);
+          else if (e?.code === "unavailable") { hint(noVoiceHint(), true); }
+          else if (e?.code !== "stopped" && e?.code !== "dismissed") hint("Das Mikrofon ließ sich nicht starten. Bitte erneut tippen.", true);
+        });
+      },
+      stop() { return d.stop().catch(() => {}); },
+    };
+  }
+
+  // ---------- Spracheingabe über den Browser (eigenständige Seite) ----------
+  function makeWebSpeechEar() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    let rec = null;
+    let want = false;
+    function create() {
+      rec = new SR();
+      rec.lang = "de-DE";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) onHeard(r[0].transcript);
+          else interim += r[0].transcript;
+        }
+        onPartial(interim);
+      };
+      rec.onerror = (e) => {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          want = false;
+          hint("Das Mikrofon ist blockiert. Erlauben Sie es in den Browser-Einstellungen.", true);
+        }
+      };
+      rec.onend = () => {
+        if (!want) return setListening(false);
+        // Browser beenden die Erkennung nach einer Pause: sofort neu starten.
+        try { rec.start(); } catch {
+          setTimeout(() => { try { rec.start(); } catch { want = false; setListening(false); hint("Tippen Sie auf »Zuhören starten«, um weiterzumachen."); } }, 400);
+        }
+      };
+    }
+    return {
+      start() {
+        want = true;
+        if (!rec) create();
+        try { rec.start(); } catch {}
+        setListening(true);
+        hint("Ich höre zu. Sagen Sie »Jarvis« und dann Ihre Frage.");
+        return Promise.resolve();
+      },
+      stop() {
+        want = false;
+        try { rec?.stop(); } catch {}
+        setListening(false);
+        return Promise.resolve();
+      },
+    };
+  }
+
+  function noVoiceHint() {
+    return "Spracheingabe gibt es hier nicht. Öffnen Sie den Link in Chrome oder nutzen Sie das Mikrofon Ihrer Tastatur im Textfeld.";
+  }
+
+  // ---------- Zuhören an/aus ----------
+  async function setListening(on) {
+    listening = on;
+    micBtn.setAttribute("aria-pressed", String(on));
+    micLabel.textContent = on ? "Zuhören beenden" : "Zuhören starten";
+    if (on) {
+      if (state === "off") setState("waiting");
+      try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+    } else {
+      buffer = "";
+      heardEl.textContent = "";
+      clearTimeout(followTimer);
+      if (!busy && state !== "speaking") setState("off");
+      try { await wakeLock?.release(); } catch {}
+      wakeLock = null;
+    }
+  }
+
+  micBtn.addEventListener("click", () => {
+    unlockSpeech();
+    if (!ear) {
+      askInput.focus();
+      return;
+    }
+    if (listening) ear.stop();
+    else ear.start(); // muss direkt im Klick passieren
+  });
+
+  askForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    unlockSpeech();
+    const raw = askInput.value.trim();
+    askInput.value = "";
+    if (!raw || busy) return;
+    const m = raw.match(WAKE);
+    const rest = m && m.index === 0 ? raw.slice(m[0].length).trim() : raw;
+    if (!rest) greet(); else handle(rest);
+  });
+
+  document.getElementById("examples").addEventListener("click", (e) => {
+    const say = e.target.closest("[data-say]")?.dataset.say;
+    if (!say || busy) return;
+    unlockSpeech();
+    handle(say);
+  });
+
+  keyForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const key = keyInput.value.trim();
+    if (!key) return;
+    try { localStorage.setItem("jarvis.apiKey", key); } catch {}
+    keyInput.value = "";
+    await connectApi(key);
+  });
+
+  async function connectApi(key) {
+    try {
+      engine = await makeApiEngine(key);
+      keybox.open = false;
+      hint(ear ? "Bereit. Tippen Sie auf »Zuhören starten« und sagen Sie »Jarvis«." : noVoiceHint());
+    } catch (e) {
+      console.error(e);
+      hint("Die Claude-Bibliothek ließ sich nicht laden. Ist das Internet verbunden?", true);
+    }
+  }
+
+  // Stimmen vorladen (Chrome liefert sie erst nach der ersten Abfrage)
+  try { synth?.getVoices(); } catch {}
+
+  // ---------- Start ----------
+  async function init() {
+    setState("off");
+    let inFrame = false;
+    try { inFrame = window.self !== window.top; } catch { inFrame = true; }
+    const viewer = typeof window.claude?.use === "function";
+
+    if (viewer) {
+      const [sample, dictation] = await Promise.all([
+        window.claude.use("sample").catch(() => null),
+        window.claude.use("dictation").catch(() => null),
+      ]);
+      if (sample) engine = makeSampleEngine(sample);
+      if (dictation) ear = makeDictationEar(dictation);
+    }
+    if (!viewer && !inFrame) {
+      ear = makeWebSpeechEar();
+      keybox.hidden = false;
+      let key = null;
+      try { key = localStorage.getItem("jarvis.apiKey"); } catch {}
+      if (key) await connectApi(key);
+      else keybox.open = true;
+    }
+
+    micBtn.disabled = false;
+    if (!ear) {
+      micLabel.textContent = "Schreiben oder diktieren";
+      hint(noVoiceHint());
+    } else if (!engine && !keybox.hidden) {
+      hint("Tragen Sie unten Ihren Anthropic-API-Schlüssel ein, dann kann es losgehen.");
+    } else if (!listening) {
+      hint("Tippen Sie auf »Zuhören starten« und sagen Sie »Jarvis«.");
+    }
+  }
+
+  init();
+</script>

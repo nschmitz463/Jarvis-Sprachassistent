@@ -1,6 +1,41 @@
 # Jarvis-Sprachassistent
 
-Ein deutschsprachiger Sprachassistent für den PC, geschrieben in Python.
+Ein deutschsprachiger KI-Butler: Sie sagen „Jarvis“, er antwortet mit
+„Sir“ – höflich, charmant und mit trockenem Humor. Es gibt ihn als
+**Web-App fürs Handy** (`web/`) und als **Python-App für den PC** (`jarvis/`).
+
+## Auf dem Handy
+
+Die Web-App läuft direkt im Handy-Browser – keine Installation nötig.
+
+**Variante A – über claude.ai (ohne API-Schlüssel):**
+Den veröffentlichten Jarvis-Link öffnen, auf „Zuhören starten“ tippen,
+„Jarvis“ sagen. Claude antwortet über Ihren eigenen Claude-Zugang.
+Freihändige Spracheingabe gibt es dort in **Chrome** (Android oder Desktop).
+In Safari und in der Claude-App funktioniert die Spracheingabe nicht; dort kann
+man aber das Mikrofon der Tastatur im Textfeld benutzen.
+
+**Variante B – eigenständige Seite `web/index.html` (mit API-Schlüssel):**
+Funktioniert auch auf dem iPhone (Safari) mit der Spracherkennung des
+Browsers. Die Datei muss über HTTPS erreichbar sein, z. B.:
+
+- GitHub Pages: Repository öffentlich machen, unter *Settings → Pages* den
+  Branch und den Ordner wählen und dann `…/web/` öffnen.
+  (Bei privaten Repositories braucht GitHub Pages ein kostenpflichtiges Konto.)
+- oder den Ordner `web/` per Drag & Drop bei einem Static-Hosting-Dienst hochladen.
+
+Beim ersten Öffnen den Anthropic-API-Schlüssel eintragen. Er bleibt nur auf
+dem Handy gespeichert. Mit „Zum Home-Bildschirm hinzufügen“ wird daraus
+eine App-Kachel.
+
+`web/jarvis.html` ist der Quelltext der Seite, `web/index.html` wird daraus
+mit `python web/build.py` erzeugt.
+
+**Sprachbefehle in der Web-App:** „Jarvis“ (Begrüßung mit „Sir“), danach beliebige
+Fragen an Claude; fest eingebaut sind Uhrzeit, Datum, „Timer auf 5 Minuten“,
+„Neues Gespräch“ und „Schlafen“ (beendet das Zuhören).
+
+## Auf dem PC (Python)
 
 - **Aktivierungswort:** „Jarvis“ (z. B. „Jarvis, wie spät ist es?“)
 - **Spracherkennung:** Google Speech Recognition (über `SpeechRecognition`)

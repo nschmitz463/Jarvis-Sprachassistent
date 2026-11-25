@@ -21,19 +21,19 @@ def test_beenden():
 
 @mock.patch("webbrowser.open")
 def test_website(open_):
-    assert commands.handle("Öffne YouTube").text == "Ich öffne Youtube."
+    assert commands.handle("Öffne YouTube").text == "Sehr wohl, Sir. Ich öffne Youtube."
     open_.assert_called_once_with("https://www.youtube.com")
 
 
 @mock.patch("webbrowser.open")
 def test_google_suche(open_):
-    assert commands.handle("Suche nach Dart Regeln").text == "Ich suche nach dart regeln."
+    assert commands.handle("Suche nach Dart Regeln").text == "Sehr wohl, Sir. Ich suche nach dart regeln."
     assert "dart%20regeln" in open_.call_args[0][0]
 
 
 @mock.patch("threading.Timer")
 def test_timer(timer):
-    assert commands.handle("Stell einen Timer auf fünf Minuten").text == "Timer auf 5 minuten gestellt."
+    assert commands.handle("Stell einen Timer auf fünf Minuten").text == "Sehr wohl, Sir. Timer auf 5 minuten gestellt."
     assert timer.call_args[0][0] == 300
 
 
@@ -45,3 +45,9 @@ def test_wake_word():
     assert strip_wake_word("Jarvis, wie spät ist es?") == "wie spät ist es"
     assert strip_wake_word("Hey Jarvis") == ""
     assert strip_wake_word("Hallo zusammen") is None
+
+
+def test_antworten_mit_sir():
+    assert "Sir" in commands.handle("Wie spät ist es?").text
+    assert "Sir" in commands.handle("Welches Datum haben wir?").text
+    assert all("Sir" in g for g in commands.GREETINGS)

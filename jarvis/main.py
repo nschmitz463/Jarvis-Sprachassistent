@@ -6,6 +6,7 @@ Start:
 """
 
 import argparse
+import random
 import re
 
 from . import commands
@@ -22,7 +23,7 @@ def respond(text: str, brain) -> bool:
         return not result.quit
     if re.search(r"\b(vergiss|neues gespräch|neues thema)\b", text.lower()):
         brain.reset()
-        commands.announce("In Ordnung, ich fange ein neues Gespräch an.")
+        commands.announce("Erledigt, Sir. Ich habe alles vergessen. Diskretion ist mein zweiter Vorname.")
         return True
     commands.announce(brain.ask(text))
     return True
@@ -45,7 +46,13 @@ def run_text_mode(brain) -> None:
             text = input("Du: ").strip()
         except (EOFError, KeyboardInterrupt):
             break
-        if text and not respond(text, brain):
+        if not text:
+            continue
+        request = strip_wake_word(text)
+        if request == "":
+            commands.announce(random.choice(commands.GREETINGS))
+            continue
+        if not respond(request if request is not None else text, brain):
             break
 
 
@@ -55,7 +62,7 @@ def run_voice_mode(brain) -> None:
 
     commands.announce = speak
     listener = Listener()
-    speak(f"Jarvis ist bereit. Sag {config.wake_word.capitalize()}, wenn du etwas brauchst.")
+    speak(f"Guten Tag, Sir. Rufen Sie einfach {config.wake_word.capitalize()}, wenn Sie etwas brauchen.")
 
     while True:
         heard = listener.listen()
@@ -66,7 +73,7 @@ def run_voice_mode(brain) -> None:
         if request is None:
             continue
         if not request:  # nur "Jarvis" gesagt → auf die eigentliche Frage warten
-            speak("Ja?")
+            speak(random.choice(commands.GREETINGS))
             request = listener.listen(timeout=8)
             if not request:
                 continue
