@@ -768,7 +768,7 @@
   }
 
   function noVoiceHint() {
-    return "Spracheingabe gibt es hier nicht. Öffnen Sie den Link in Chrome oder nutzen Sie das Mikrofon Ihrer Tastatur im Textfeld.";
+    return "Tippen Sie ins Textfeld, dann aufs Mikrofon Ihrer Tastatur, und sagen Sie »Jarvis, …« – ich schicke es nach einer kurzen Pause selbst ab.";
   }
 
   // ---------- Zuhören an/aus ----------
@@ -799,8 +799,25 @@
     else ear.start(); // muss direkt im Klick passieren
   });
 
+  // Ohne eigene Spracheingabe (Safari, Claude-App auf dem iPhone): Diktat über
+  // das Mikrofon der Tastatur. Beginnt der Text mit »Jarvis«, schickt Jarvis
+  // ihn nach einer kurzen Sprechpause selbst ab.
+  let autoSendTimer = null;
+  askInput.addEventListener("pointerdown", unlockSpeech);
+  askInput.addEventListener("input", () => {
+    clearTimeout(autoSendTimer);
+    if (ear) return;
+    const m = askInput.value.trim().match(WAKE);
+    if (!m || m.index !== 0) return;
+    autoSendTimer = setTimeout(() => {
+      askInput.blur(); // beendet das Tastatur-Diktat, damit Jarvis sich nicht selbst hört
+      askForm.requestSubmit();
+    }, 1800);
+  });
+
   askForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    clearTimeout(autoSendTimer);
     unlockSpeech();
     const raw = askInput.value.trim();
     askInput.value = "";
@@ -866,7 +883,7 @@
 
     micBtn.disabled = false;
     if (!ear) {
-      micLabel.textContent = "Schreiben oder diktieren";
+      micLabel.textContent = "Per Tastatur diktieren";
       hint(noVoiceHint());
     } else if (!engine && !keybox.hidden) {
       hint("Tragen Sie unten Ihren Anthropic-API-Schlüssel ein, dann kann es losgehen.");
