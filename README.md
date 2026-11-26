@@ -25,8 +25,18 @@ Browsers. Die Datei muss über HTTPS erreichbar sein, z. B.:
 - oder den Ordner `web/` per Drag & Drop bei einem Static-Hosting-Dienst hochladen.
 
 Beim ersten Öffnen den Anthropic-API-Schlüssel eintragen. Er bleibt nur auf
-dem Handy gespeichert. Mit „Zum Home-Bildschirm hinzufügen“ wird daraus
-eine App-Kachel.
+dem Handy gespeichert.
+
+**Tipps fürs iPhone:**
+- In **Safari** öffnen (nicht in der Claude-App) und das Mikrofon erlauben.
+  Damit Safari nicht jedes Mal fragt: *Einstellungen → Apps → Safari →
+  Mikrofon → Erlauben*.
+- Während Jarvis spricht, ist das Mikrofon kurz aus. Er hört sich also nicht
+  selbst und spricht über den Lautsprecher statt leise über die Hörmuschel.
+- Bildschirm an lassen: Wird das iPhone gesperrt, hört Safari auf zuzuhören.
+  Danach einfach wieder auf „Zuhören starten“ tippen.
+- Optional „Hey Siri, Jarvis“: In der Kurzbefehle-App einen Kurzbefehl
+  „Jarvis“ mit der Aktion *URL öffnen* (Adresse der Seite) anlegen.
 
 `web/jarvis.html` ist der Quelltext der Seite, `web/index.html` wird daraus
 mit `python web/build.py` erzeugt.

@@ -336,12 +336,18 @@
   function pickVoice() {
     const de = synth.getVoices().filter((v) => /^de/i.test(v.lang));
     return (
-      de.find((v) => /markus|yannick|stefan|hans|conrad|viktor|male|männlich/i.test(v.name) && !/female|weiblich/i.test(v.name)) ||
+      de.find((v) => /markus|martin|yannick|stefan|hans|conrad|viktor|reed|eddy|male|männlich/i.test(v.name) && !/female|weiblich/i.test(v.name)) ||
       de.find((v) => /google/i.test(v.name)) ||
       de[0] || null
     );
   }
-  function speak(text) {
+  async function speak(text) {
+    const pausable = listening && typeof ear?.pause === "function";
+    if (pausable) await ear.pause();
+    await say(text);
+    if (pausable && listening) ear.resume();
+  }
+  function say(text) {
     lastSpoken = norm(text);
     if (!synth) return Promise.resolve();
     return new Promise((resolve) => {
@@ -650,13 +656,35 @@
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     let rec = null;
-    let want = false;
+    let want = false;     // Nutzer möchte, dass zugehört wird
+    let paused = false;   // kurz pausiert, während Jarvis spricht
+    let running = false;  // Erkennung läuft gerade
+    let ignore = false;   // Ergebnisse bis zum Neustart verwerfen
+    let stableTimer = null;
+    const endWaiters = [];
+
+    function restart() {
+      if (!want || paused || running) return;
+      try { rec.start(); } catch {
+        setTimeout(() => {
+          if (!want || paused || running) return;
+          try { rec.start(); } catch {
+            want = false;
+            setListening(false);
+            hint("Tippen Sie auf »Zuhören starten«, um weiterzumachen.");
+          }
+        }, 400);
+      }
+    }
+
     function create() {
       rec = new SR();
       rec.lang = "de-DE";
       rec.continuous = true;
       rec.interimResults = true;
+      rec.onstart = () => { running = true; ignore = false; };
       rec.onresult = (e) => {
+        if (ignore) return;
         let interim = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const r = e.results[i];
@@ -664,35 +692,67 @@
           else interim += r[0].transcript;
         }
         onPartial(interim);
+        clearTimeout(stableTimer);
+        if (interim.trim()) {
+          // Safari auf dem iPhone meldet oft kein "fertig": Steht der Text eine
+          // Sekunde still, gilt er als gesprochen, und die Erkennung startet neu.
+          stableTimer = setTimeout(() => {
+            ignore = true;
+            onHeard(interim);
+            try { rec.stop(); } catch {}
+          }, 1000);
+        }
       };
       rec.onerror = (e) => {
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           want = false;
-          hint("Das Mikrofon ist blockiert. Erlauben Sie es in den Browser-Einstellungen.", true);
+          hint("Das Mikrofon ist blockiert. Erlauben Sie es unter Einstellungen → Safari → Mikrofon.", true);
         }
       };
       rec.onend = () => {
+        running = false;
+        clearTimeout(stableTimer);
+        endWaiters.splice(0).forEach((done) => done());
+        if (paused) return;
         if (!want) return setListening(false);
-        // Browser beenden die Erkennung nach einer Pause: sofort neu starten.
-        try { rec.start(); } catch {
-          setTimeout(() => { try { rec.start(); } catch { want = false; setListening(false); hint("Tippen Sie auf »Zuhören starten«, um weiterzumachen."); } }, 400);
-        }
+        // Browser beenden die Erkennung nach einer Pause: gleich neu starten.
+        restart();
       };
     }
+
     return {
       start() {
         want = true;
+        paused = false;
         if (!rec) create();
-        try { rec.start(); } catch {}
+        if (!running) { try { rec.start(); } catch {} }
         setListening(true);
         hint("Ich höre zu. Sagen Sie »Jarvis« und dann Ihre Frage.");
         return Promise.resolve();
       },
       stop() {
         want = false;
+        paused = false;
+        clearTimeout(stableTimer);
         try { rec?.stop(); } catch {}
         setListening(false);
         return Promise.resolve();
+      },
+      // Während Jarvis spricht, ist das Mikrofon aus: Auf dem iPhone wäre die
+      // Stimme sonst sehr leise, und Jarvis würde sich selbst hören.
+      pause() {
+        paused = true;
+        clearTimeout(stableTimer);
+        if (!running) return Promise.resolve();
+        return new Promise((resolve) => {
+          endWaiters.push(resolve);
+          setTimeout(resolve, 800);
+          try { rec.abort(); } catch { resolve(); }
+        });
+      },
+      resume() {
+        paused = false;
+        restart();
       },
     };
   }
